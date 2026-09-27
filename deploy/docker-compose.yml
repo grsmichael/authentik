@@ -1,0 +1,98 @@
+# authentik 本地部署栈（postgres + server + worker）
+#
+# 与仓库 lifecycle/container/compose.yml 同源（官方镜像标准栈）。
+# 数据卷都落在 deploy/ 目录下（./data ./certs ./custom-templates），方便清理。
+#
+# 启动：
+#   cd deploy
+#   docker compose pull
+#   docker compose up -d
+#
+# 服务导航（tools/nav，容器 authentik-nav，http://localhost:8899/）会探测
+# 本栈对外发布的宿主机端口（9000/9443），并用 container_name 展示容器状态。
+#
+# 说明：
+# - LDAP / RADIUS / Proxy / RAC 等 outpost 默认以「嵌入式」方式随 server 一起运行，
+#   足以在 UI 里体验；如需独立的 outpost 容器再另行部署。
+# - Postgres 只在 compose 网络内监听，不映射宿主机端口（宿主机 5432 可能被其他
+#   项目占用，且那不是本栈的数据库）。要连库调试用 `docker exec -it
+#   authentik-postgresql psql -U authentik`。
+# - 默认缓存/渠道走进程内存，未启用 Redis；如要启用，另行加 redis 服务并配置
+#   AUTHENTIK_CACHE__URL / AUTHENTIK_CHANNEL__URL。
+
+services:
+  postgresql:
+    container_name: authentik-postgresql
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+      POSTGRES_USER: ${PG_USER:-authentik}
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 20s
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      timeout: 5s
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  server:
+    container_name: authentik-server
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.11.0-rc1}
+    ports:
+      - ${COMPOSE_PORT_HTTP:-9000}:9000
+      - ${COMPOSE_PORT_HTTPS:-9443}:9443
+    restart: unless-stopped
+    shm_size: 512mb
+    volumes:
+      - ./data:/data
+      - ./custom-templates:/templates
+      # 自签企业版许可证的信任锚：覆盖容器内的 Root CA 证书。
+      # authentik 以相对路径 authenticik/enterprise/public.pem 读取它
+      # （容器 CWD=/，绝对路径即 /authentik/enterprise/public.pem），
+      # 这个文件是整个许可证校验体系唯一的信任锚。见 tools/enterprise-license/。
+      - ./enterprise-pki/public.pem:/authentik/enterprise/public.pem:ro
+
+  worker:
+    container_name: authentik-worker
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.11.0-rc1}
+    restart: unless-stopped
+    shm_size: 512mb
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+      - ./certs:/certs
+      - ./custom-templates:/templates
+      # 与 server 同理：worker 也会读许可证（用量统计、企业版定时任务）
+      - ./enterprise-pki/public.pem:/authentik/enterprise/public.pem:ro

@@ -1,0 +1,170 @@
+{
+  "_comment": "authentik 本地服务导航的【唯一数据源】。serve_nav.py 用它做健康探测，服务导航.html 通过 /__services 拉它渲染卡片。新增/改端口只改这里，两边自动同步，不存在顺序对不上的问题。",
+  "project": "authentik",
+  "version": "2026.8.3",
+
+  "_version_comment": "version = 当前 Docker 部署镜像 tag（deploy/.env 的 AUTHENTIK_TAG=2026.8.3）。仓库源码版本为 2026.11.0-rc1（authentik/__init__.py 与 package.json）——想跑源码版本走 make run 源码模式，届时把这里改回去。",
+
+  "_credentials_comment": "默认账号区块。【唯一数据源】，页面「默认账号」面板 + 各服务卡片上的账号提示都由这里渲染。账号全部取自 deploy/.env（Docker 部署）：管理员 akadmin 由 blueprints/system/bootstrap.yaml 创建，密码来自 AUTHENTIK_BOOTSTRAP_PASSWORD；Postgres 来自 deploy/.env 的 PG_PASS（仅 compose 网络内，不映射宿主机端口）。open 里的 port+path 用于生成「一键打开」按钮，host 跟随页面当前的「服务链接主机」选择。",
+  "credentials": {
+    "title": "默认账号（Docker 部署）",
+    "note": "全部取自 <code>deploy/.env</code>，仅用于本地开发/体验，切勿用于生产。<br>authentik 默认管理员用户名固定为 <b>akadmin</b>，由启动蓝图 <code>blueprints/system/bootstrap.yaml</code> 创建。Docker 部署已设置 <code>AUTHENTIK_BOOTSTRAP_PASSWORD=akdev123!</code>，直接用 <b>akadmin / akdev123!</b> 登录即可。<br><b>PostgreSQL 在 compose 网络内运行（postgres:16-alpine，命名卷）</b>，不映射宿主机端口；S3 / Redis / LDAP / RADIUS / metrics 这几项默认都没启用，红了属正常。",
+    "items": [
+      {
+        "label": "管理员（akadmin）",
+        "user": "akadmin",
+        "pwd": "akdev123!",
+        "role": "超级管理员 · 由启动蓝图创建",
+        "desc": "authentik 的默认管理员用户名固定为 <code>akadmin</code>，由 <code>blueprints/system/bootstrap.yaml</code> 在启动时创建。密码来自环境变量 <code>AUTHENTIK_BOOTSTRAP_PASSWORD</code>：Docker 部署（deploy/.env）已设为 <code>akdev123!</code>，直接登录；源码模式未设时访问 9000 会跳 <code>/setup</code> 引导创建。CI 用的是 <code>AUTHENTIK_BOOTSTRAP_PASSWORD=test-runner</code>。",
+        "open": { "port": 9000, "path": "/", "label": "打开 authentik" },
+        "open2": { "port": 9000, "path": "/if/admin/", "label": "管理后台" }
+      },
+      {
+        "label": "PostgreSQL 数据库（Docker 部署必需）",
+        "user": "authentik",
+        "pwd": "deploy/.env 的 PG_PASS",
+        "role": "库 authentik · 仅 compose 网络内，不映射宿主机端口",
+        "desc": "Docker 部署用 <code>deploy/docker-compose.yml</code> 的 <code>postgres:16-alpine</code>，数据落在 <code>./data/postgres</code>（绑定挂载），<b>不映射宿主机端口</b>（宿主机 5432 可能被其他项目占用，且那不是本栈的数据库）。连库调试：<code>docker exec -it authentik-postgresql psql -U authentik</code>。源码开发模式才用 <code>scripts/compose.yml</code> 把 5432 映射到本机。"
+      },
+      {
+        "label": "S3 对象存储（dev 媒体，Docker 部署未启用）",
+        "user": "accessKey1",
+        "pwd": "secretKey1",
+        "role": "端点 127.0.0.1:8020 · bucket authentik-media",
+        "desc": "仅源码开发模式：<code>scripts/compose.yml</code> 里的 zenko/cloudserver 容器（host 8020 → container 8000）。Docker 部署默认 <code>storage.backend=file</code>，媒体落在 <code>deploy/data/</code>；要切 S3 时把 backend 改成 s3 并填 <code>endpoint=http://localhost:8020</code>、<code>access_key=accessKey1</code>、<code>secret_key=secretKey1</code>、<code>bucket_name=authentik-media</code>（见 <code>scripts/generate_config.py</code>）。",
+        "open": { "port": 8020, "path": "", "label": "tcp 8020", "tcp": true }
+      },
+      {
+        "label": "Redis（缓存 / 渠道，默认未启用）",
+        "user": "127.0.0.1:6379",
+        "pwd": "空密码",
+        "role": "端口 6379 · 默认配置未启用",
+        "desc": "authentik 默认 <code>cache.url</code> 与 <code>channel.url</code> 都为空，缓存走本地内存；这一项红了属正常。需要分布式缓存/渠道时再在 compose 里加 redis 服务并配置 <code>AUTHENTIK_CACHE__URL</code> / <code>AUTHENTIK_CHANNEL__URL</code>。",
+        "open": { "port": 6379, "path": "", "label": "tcp 6379", "tcp": true }
+      }
+    ],
+    "quickstart": [
+      { "text": "启动 authentik 栈：<code>cd deploy && docker compose up -d</code>（postgres + server + worker，9000/9443）。", "open": { "port": 9000, "path": "/", "label": "首页" } },
+      { "text": "启动服务导航：<code>docker compose -f tools/nav/docker-compose.yml up -d --build</code> → <code>http://localhost:8899/</code>。", "open": { "port": 8899, "path": "/", "label": "服务导航" } },
+      { "text": "浏览器打开 <code>http://localhost:9000/</code>，用 akadmin / akdev123! 登录（账号见 deploy/.env）。", "open": { "port": 9000, "path": "/", "label": "首页" } },
+      { "text": "管理后台：<code>http://localhost:9000/if/admin/</code>；用户中心：<code>/if/user/</code>；API 浏览器：<code>/api/v3/</code>。", "open": { "port": 9000, "path": "/if/admin/", "label": "管理后台" } },
+      { "text": "源码开发模式（可选）：<code>make install</code> → <code>make gen-dev-config</code> → <code>make run</code>（ak allinone，监听 9000/9443；注意先停 Docker 栈避免端口冲突）。", "open": { "port": 9000, "path": "/", "label": "首页" } },
+      { "text": "可选 - 组件文档：<code>make web-storybook-watch</code> → Storybook <code>http://localhost:6006/</code>。", "open": { "port": 6006, "path": "/", "label": "Storybook" } }
+    ]
+  },
+
+  "_services_comment": "kind 三种：http（GET 探测 probe 路径，2xx/3xx 视为 up，401/403 也算活着）/ tcp（connect 成功即 up）/ udp（UDP 无连接语义，脚本不探测，状态恒灰；用于不发布宿主机端口、只能看容器状态的服务）。container 附加展示 docker 容器状态（deploy/docker-compose.yml 的 container_name），不参与 up/down 判定。Docker 部署只发布 9000/9443；Postgres/LDAP/RADIUS/metrics 等都只在容器网络内，探测不了属正常。",
+  "services": [
+    {
+      "name": "服务导航（本页 · tools/nav）",
+      "port": 8899,
+      "kind": "http",
+      "probe": "/__services",
+      "desc": "零依赖 Python 小服务 + 导航页（<code>tools/nav/</code>），容器 <code>authentik-nav</code>，通过 <code>host.docker.internal</code> 探测宿主机端口、挂 docker.sock 展示容器状态。启动：<code>docker compose -f tools/nav/docker-compose.yml up -d --build</code>。",
+      "links": [
+        { "label": "刷新状态", "path": "/" }
+      ]
+    },
+    {
+      "name": "authentik server（Docker · 主服务）",
+      "port": 9000,
+      "main": true,
+      "kind": "http",
+      "probe": "/-/health/live/",
+      "container": "authentik-server",
+      "desc": "<b>核心服务容器</b>（<code>deploy/docker-compose.yml</code> 的 <code>server</code>）：Rust（axum）承载 HTTP/HTTPS，Django 处理 API/UI，前端构建产物由本进程在 :9000 直接托管。根路径 <code>/</code> 已登录跳 <code>/if/admin/</code>，未初始化跳 <code>/setup</code>。健康探针 <code>/-/health/live/</code> 与 <code>/-/health/ready/</code>，Prometheus 指标 <code>/-/metrics/</code>。启动：<code>cd deploy && docker compose up -d</code>。",
+      "creds": [
+        { "label": "登录", "user": "akadmin", "pwd": "akdev123!", "note": "deploy/.env 的 BOOTSTRAP_PASSWORD" }
+      ],
+      "links": [
+        { "label": "首页", "path": "/" },
+        { "label": "管理后台", "path": "/if/admin/" },
+        { "label": "用户中心", "path": "/if/user/" },
+        { "label": "API 浏览器", "path": "/api/v3/" },
+        { "label": "OpenAPI Schema", "path": "/api/v3/schema/" },
+        { "label": "健康检查", "path": "/-/health/live/" },
+        { "label": "Prometheus 指标", "path": "/-/metrics/" }
+      ]
+    },
+    {
+      "name": "authentik HTTPS（TLS 监听）",
+      "port": 8443,
+      "kind": "tcp",
+      "probe": "/-/health/live/",
+      "container": "authentik-server",
+      "desc": "与 :9000 同一容器开的 TLS 监听端口（容器内固定 <code>9443</code>）。<b>宿主侧发布在 8443</b>——Windows/Docker 把 9443 划进了保留端口段（9366-9465），宿主 bind 会报 WinError 10013，所以 deploy/.env 里映射成 <code>COMPOSE_PORT_HTTPS=8443</code>。注意这是 HTTPS，导航页用 HTTP 探测会被拒绝——状态仅供参考；浏览器访问需 <code>https://localhost:8443/</code>。这里用 <b>tcp 探测</b>（端口能连上即 up），因为用 HTTP 探 TLS 端口只会拿到握手垃圾。开发通常只用 9000 的 HTTP。",
+      "links": [
+        { "label": "HTTPS 首页", "path": "/" }
+      ]
+    },
+    {
+      "name": "PostgreSQL（Docker 数据库 · 必需）",
+      "port": 5432,
+      "kind": "udp",
+      "container": "authentik-postgresql",
+      "desc": "<b>开发必需</b>：authentik 的所有数据都在 Postgres（postgres:16-alpine，容器 <code>authentik-postgresql</code>）。<b>Docker 部署不映射宿主机端口</b>，本项状态恒灰（探测不了）——在线与否看左边的容器状态，或直接 <code>docker exec -it authentik-postgresql psql -U authentik</code>。宿主机 5432 若绿，那是其他项目占的，与本栈无关。",
+      "creds": [
+        { "label": "连接", "user": "authentik", "pwd": "deploy/.env 的 PG_PASS", "note": "库 authentik" }
+      ],
+      "links": []
+    },
+    {
+      "name": "S3 / zenko cloudserver（dev 媒体存储 · 默认未启用）",
+      "port": 8020,
+      "kind": "tcp",
+      "desc": "仅源码开发模式：<code>scripts/compose.yml</code> 里的 zenko/cloudserver 容器，host <code>8020</code> → container <code>8000</code>。Docker 部署默认 <code>storage.backend=file</code>，媒体落 <code>deploy/data/</code>；这一项红了属正常。要切 S3：endpoint <code>http://localhost:8020</code>、<code>accessKey1/secretKey1</code>、bucket <code>authentik-media</code>（见 <code>scripts/generate_config.py</code>）。",
+      "creds": [
+        { "label": "连接", "user": "accessKey1", "pwd": "secretKey1", "note": "bucket authentik-media" }
+      ],
+      "links": []
+    },
+    {
+      "name": "LDAP outpost（嵌入式 · 默认关闭）",
+      "port": 3389,
+      "kind": "tcp",
+      "container": "authentik-server",
+      "desc": "authentik 的 LDAP 出站代理（outpost）端口（<code>listen.ldap=[::]:3389</code>）。嵌入式 outpost 在 server 容器内监听，但 Docker 部署<b>未发布该端口到宿主机</b>，本项红了属正常；要看容器状态点左边。需配置 LDAP provider + 独立 outpost 才对外可用。",
+      "links": []
+    },
+    {
+      "name": "RADIUS outpost（嵌入式 · 默认关闭）",
+      "port": 1812,
+      "kind": "tcp",
+      "container": "authentik-server",
+      "desc": "authentik 的 RADIUS 出站代理端口（<code>listen.radius=[::]:1812</code>）。嵌入式 outpost 在 server 容器内监听，但 Docker 部署<b>未发布该端口到宿主机</b>，本项红了属正常；需配置 RADIUS provider 才使用。",
+      "links": []
+    },
+    {
+      "name": "Storybook（前端组件文档 · 可选）",
+      "port": 6006,
+      "kind": "http",
+      "probe": "/",
+      "desc": "web UI 的组件文档站：<code>make web-storybook-watch</code> → <code>web/package.json</code> 的 <code>storybook</code> 脚本（<code>storybook dev -p 6006</code>）。仅源码开发模式可用，不影响主服务，红了属正常。",
+      "links": [
+        { "label": "打开", "path": "/" }
+      ]
+    },
+    {
+      "name": "Prometheus 指标（metrics 监听 · 可选）",
+      "port": 9300,
+      "kind": "tcp",
+      "container": "authentik-server",
+      "desc": "authentik 的 metrics 监听端口（<code>listen.metrics=[::]:9300</code>）。Docker 部署未发布到宿主机，本项红了属正常；指标实际也在 :9000 的 <code>/-/metrics/</code> 暴露。",
+      "links": []
+    },
+    {
+      "name": "Redis（缓存 / 渠道 · 默认未使用）",
+      "port": 6379,
+      "kind": "tcp",
+      "desc": "authentik 默认 <code>cache.url</code> 与 <code>channel.url</code> 为空，缓存走本地内存；这一项红了属正常。需要分布式缓存/渠道时再在 deploy compose 里加 redis 服务并配 <code>AUTHENTIK_CACHE__URL</code> / <code>AUTHENTIK_CHANNEL__URL</code>。",
+      "links": []
+    },
+    {
+      "name": "Rust/Py debug 端口（debug_tokio · 可选）",
+      "port": 9900,
+      "kind": "tcp",
+      "desc": "<code>listen.debug=0.0.0.0:9900</code>（tokio-console）以及 <code>listen.debug_py=0.0.0.0:9901</code>。仅调试时用，默认不监听；这两项红了属正常。",
+      "links": []
+    }
+  ]
+}
