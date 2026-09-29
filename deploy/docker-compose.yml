@@ -14,9 +14,11 @@
 # 说明：
 # - LDAP / RADIUS / Proxy / RAC 等 outpost 默认以「嵌入式」方式随 server 一起运行，
 #   足以在 UI 里体验；如需独立的 outpost 容器再另行部署。
-# - Postgres 只在 compose 网络内监听，不映射宿主机端口（宿主机 5432 可能被其他
-#   项目占用，且那不是本栈的数据库）。要连库调试用 `docker exec -it
-#   authentik-postgresql psql -U authentik`。
+# - Postgres 仅映射宿主 127.0.0.1:5433（容器内固定 5432）。映射的目的：让「许可证管理控制台」
+#   能用 psycopg2 直连本机 Postgres 写许可证 + 清缓存，不必依赖 docker exec。
+#   5433 避让本机可能占用的 5432；仅绑 127.0.0.1，不暴露到局域网。
+#   改端口后记得同步 tools/nav/services.json 与 tools/nav/README.md、以及控制台设置页默认值。
+#   要连库调试也可 `docker exec -it authentik-postgresql psql -U authentik`。
 # - 默认缓存/渠道走进程内存，未启用 Redis；如要启用，另行加 redis 服务并配置
 #   AUTHENTIK_CACHE__URL / AUTHENTIK_CHANNEL__URL。
 
@@ -39,6 +41,9 @@ services:
       timeout: 5s
     image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
+    ports:
+      # Q-10：本机直连通道用（控制台 psycopg2 写许可证 + 清缓存）。仅绑 127.0.0.1。
+      - "127.0.0.1:5433:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
 

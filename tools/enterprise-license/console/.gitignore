@@ -1,0 +1,6 @@
+# 控制台运行时产物（含本机数据库密码，切勿提交）
+config.json
+console.log
+issued/
+__pycache__/
+*.pyc

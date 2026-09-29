@@ -79,3 +79,41 @@ python -c "import cryptography; print(cryptography.__version__)"   # 已验证 5
 ```
 
 `pyjwt` 是可选的 —— 装了会在自检里多做一次官方库复验。
+
+---
+
+## 许可证管理控制台（PyQt5 桌面应用）
+
+把上面的命令行流程收敛成桌面应用：读 install_id → 填参数 → 签票 → 本地校验 → 发布到 authentik → 回读生效状态，外加许可证库、逐项校验、CA 链重签/恢复、操作日志。
+
+代码在 `console/`（`console/main.py` 是入口，按职责分包：`config` / `authentik` / `licenses` / `workers` / `widgets`）。
+
+### 运行
+
+```bash
+# 源码运行（推荐日常使用）
+python run_console.py
+#   或  python -m console.main
+
+# 打包成独立 exe（PyInstaller，产物在 dist/LicenseConsole/）
+pip install pyinstaller
+python package_console.py
+```
+
+### 执行通道（重要）
+
+- **直连 Postgres（默认主通道）**：许可证写在 `public.authentik_enterprise_license` 表，
+  缓存也在同库的 `public.django_postgres_cache_cacheentry` 表，**同库所以写表+清缓存不需要 docker**。
+  本机直连用 `127.0.0.1:5433`（compose 已映射，数据卷不动）。
+- **docker exec（兜底通道）**：当 `channel=auto` 直连失败、或手动设 `channel=docker` 时，
+  用 `docker exec ... psql` 写库、`docker exec ... ak shell` 清缓存/读状态。
+- 无 docker 且无法直连时，状态按 FR-13 在本地复算（复刻 `license.py` 判定顺序），界面标注「本地推算」。
+
+### 先行配置 / 端口
+
+- 本机部署请先给 `deploy/docker-compose.yml` 的 `postgresql` 加 `127.0.0.1:5433:5432`（已加），
+  再 `docker compose up -d postgresql` 重建容器。
+- 控制台首次打开会生成 `console/config.json`，DB 密码默认从 `deploy/.env` 读取；
+  可在「设置」页改主机/端口/通道并「测试连接」。
+- 改动一律留工作区，不提交（含 `config.json` 里的密码，已被 `console/.gitignore` 忽略）。
+
